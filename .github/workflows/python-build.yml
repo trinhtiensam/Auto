@@ -4,9 +4,12 @@ on:
   push:
     branches: [ "main" ]
 
+permissions:
+  contents: write   # 👈 Cho phép commit/push
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022   # 👈 fix warning, chọn version cụ thể
     steps:
       - uses: actions/checkout@v3
 
@@ -18,11 +21,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
-      # 👉 Bước này sẽ export requirements.txt mới nhất
       - name: Export requirements.txt
         run: pip freeze > requirements.txt
 
-      # Commit ngược lại vào repo (cập nhật requirements.txt)
       - name: Commit updated requirements.txt
         run: |
           git config --global user.name "github-actions"
