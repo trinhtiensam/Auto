@@ -1,441 +1,337 @@
-# autofill_app.py
-# Ứng dụng Autofill + Trình quản lý hồ sơ (1 file)
-# - Tất cả giao diện tiếng Việt
-# - 10 trường: Tài khoản, Mật khẩu, Nhập lại mật khẩu, Họ tên, Số điện thoại, Email, Ngày sinh, PIN, Bank, Chi nhánh
-# - Menu Hồ sơ: Chỉnh sửa, Xuất, Nhập (nhập = gộp thêm, tránh trùng tên)
-# - Hiển thị bảng 2 cột (Tên trường - Giá trị) readonly
-# - Nút Chạy Autofill
-
-import json
-import time
-import threading
+import json, os, time
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import pyautogui
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
-try:
-    import pygetwindow as gw
-    HAVE_PYGETWINDOW = True
-except Exception:
-    HAVE_PYGETWINDOW = False
+# ------------------- File JSON -------------------
+PROFILES_FILE = "profiles.json"
+SETTINGS_FILE = "settings.json"
+HIDEMIUM_FILE = "hidemium_profiles.json"
 
-APP_TITLE = 'Autofill - Ứng dụng tự động điền'
+# ------------------- Mặc định -------------------
+DEFAULT_FIELDS = ["Tài khoản","Mật khẩu","Nhập lại mật khẩu","Họ tên","Số điện thoại",
+                  "Email","Ngày sinh","PIN","Ngân hàng","Chi nhánh"]
 
-FIELDS = [
-    "Tài khoản",
-    "Mật khẩu",
-    "Nhập lại mật khẩu",
-    "Họ tên",
-    "Số điện thoại",
-    "Email",
-    "Ngày sinh",
-    "PIN",
-    "Bank",
-    "Chi nhánh"
-]
+DEFAULT_FIELD_MAP = {
+    "username": ["username", "user", "account", "tài khoản", "login"],
+    "password": ["password", "pass", "mật khẩu", "pwd"],
+    "confirm_password": ["confirm_password", "confirm", "nhập lại mật khẩu", "retype"],
+    "fullname": ["fullname", "full_name", "họ tên", "name"],
+    "phone": ["phone", "số điện thoại", "mobile", "tel"],
+    "email": ["email", "mail", "e-mail"],
+    "dob": ["dob", "ngày sinh", "birthday", "date_of_birth"],
+    "pin": ["pin", "mã pin", "code"],
+    "bank": ["bank", "ngân hàng"],
+    "branch": ["branch", "chi nhánh", "branch_name"]
+}
 
-DEFAULT_PROFILES_PATH = 'profiles.json'
-
-# -------------------------
-# I/O
-# -------------------------
-
-def load_profiles(path=DEFAULT_PROFILES_PATH):
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            raise ValueError('File JSON phải chứa một danh sách các hồ sơ')
-        return data
-    except FileNotFoundError:
-        return []
-
-def save_profiles(profiles, path=DEFAULT_PROFILES_PATH):
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(profiles, f, ensure_ascii=False, indent=2)
-
-# -------------------------
-# Autofill logic
-# -------------------------
-
-def autofill_profile(profile, press_tab=True, interval=0.02):
-    for i, field in enumerate(FIELDS):
-        val = profile.get(field, "")
-        # Ensure string
-        pyautogui.write(str(val), interval=interval)
-        if press_tab and i < len(FIELDS) - 1:
-            pyautogui.press('tab')
-            time.sleep(0.05)
-
-def run_autofill(profiles, mode, countdown, activate_title, interval, press_tab=True):
-    # mode: 'countdown' or 'title'
-    if mode == 'title' and HAVE_PYGETWINDOW:
+# ------------------- Load/Save JSON -------------------
+def load_json(file, default):
+    if os.path.exists(file):
         try:
-            wins = gw.getWindowsWithTitle(activate_title)
-            if not wins:
-                raise Exception('Không tìm thấy cửa sổ có tiêu đề phù hợp')
-            wins[0].activate()
-            time.sleep(0.3)
-        except Exception as e:
-            print('Không thể kích hoạt cửa sổ theo tiêu đề:', e)
-            mode = 'countdown'
+            with open(file,"r",encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return default
+    return default
 
-    if mode == 'countdown':
-        for i in range(countdown, 0, -1):
-            print(f'Bắt đầu trong {i} giây...')
-            time.sleep(1)
+def save_json(file,data):
+    with open(file,"w",encoding="utf-8") as f:
+        json.dump(data,f,ensure_ascii=False,indent=2)
 
-    for p in profiles:
-        print('Đang điền hồ sơ:', p.get('name', '(không tên)'))
-        autofill_profile(p, press_tab=press_tab, interval=interval)
-        time.sleep(0.3)
-
-# -------------------------
-# Helpers: merge import
-# -------------------------
-
-def unique_name(existing_names, name):
-    if name not in existing_names:
-        return name
-    # add suffix (2), (3), ...
-    i = 2
-    while True:
-        cand = f"{name} ({i})"
-        if cand not in existing_names:
-            return cand
-        i += 1
-
-def merge_profiles(existing, new_list):
-    # existing, new_list are lists of profile dicts
-    existing_names = {p.get('name','') for p in existing}
-    added = 0
-    for p in new_list:
-        name = p.get('name','')
-        if not name:
-            # generate a fallback name
-            name = 'Hồ sơ'
-        if name in existing_names:
-            new_name = unique_name(existing_names, name)
-            p['name'] = new_name
-        existing.append(p)
-        existing_names.add(p['name'])
-        added += 1
-    return added
-
-# -------------------------
-# GUI: Profile Editor (Tiếng Việt)
-# -------------------------
-
-class ProfileEditor(tk.Toplevel):
-    def __init__(self, master, profiles, on_save_callback):
-        super().__init__(master)
-        self.title('Chỉnh sửa hồ sơ')
-        self.geometry('700x520')
-        self.profiles = profiles
-        self.on_save_callback = on_save_callback
-        self.selected_index = None
-        self.create_widgets()
-
-    def create_widgets(self):
-        self.columnconfigure(1, weight=1)
-
-        left = ttk.Frame(self, padding=8)
-        left.pack(side='left', fill='y')
-        right = ttk.Frame(self, padding=8)
-        right.pack(side='right', fill='both', expand=True)
-
-        ttk.Label(left, text='Danh sách hồ sơ').pack(anchor='w')
-        self.listbox = tk.Listbox(left, width=30)
-        self.listbox.pack(fill='y', expand=True)
-        self.listbox.bind('<<ListboxSelect>>', self.on_select)
-
-        btn_frame = ttk.Frame(left)
-        btn_frame.pack(fill='x')
-        ttk.Button(btn_frame, text='Thêm', command=self.add_profile).pack(fill='x', pady=2)
-        ttk.Button(btn_frame, text='Xóa', command=self.delete_profile).pack(fill='x', pady=2)
-
-        # Right: form fields
-        self.fields_vars = {}
-        row = 0
-        ttk.Label(right, text='Tên hồ sơ').grid(row=row, column=0, sticky='e', padx=4, pady=4)
-        self.fields_vars['name'] = tk.StringVar()
-        ttk.Entry(right, textvariable=self.fields_vars['name'], width=40).grid(row=row, column=1, sticky='w')
-        row += 1
-
-        for f in FIELDS:
-            ttk.Label(right, text=f).grid(row=row, column=0, sticky='e', padx=4, pady=4)
-            var = tk.StringVar()
-            ttk.Entry(right, textvariable=var, width=40).grid(row=row, column=1, sticky='w')
-            self.fields_vars[f] = var
-            row += 1
-
-        action_frame = ttk.Frame(right)
-        action_frame.grid(row=row, column=0, columnspan=2, pady=8)
-        ttk.Button(action_frame, text='Lưu thay đổi', command=self.save_changes).pack(side='left', padx=4)
-        ttk.Button(action_frame, text='Lưu ra file...', command=self.export_profiles).pack(side='left', padx=4)
-        ttk.Button(action_frame, text='Nhập từ file...', command=self.import_profiles).pack(side='left', padx=4)
-
-        self.refresh_listbox()
-
-    def refresh_listbox(self):
-        self.listbox.delete(0, 'end')
-        for p in self.profiles:
-            self.listbox.insert('end', p.get('name','(không tên)'))
-
-    def on_select(self, event):
-        try:
-            idx = self.listbox.curselection()[0]
-            self.selected_index = idx
-            p = self.profiles[idx]
-            self.fields_vars['name'].set(p.get('name',''))
-            for f in FIELDS:
-                self.fields_vars[f].set(p.get(f,''))
-        except Exception:
-            pass
-
-    def add_profile(self):
-        new = { 'name': 'Hồ sơ mới' }
-        for f in FIELDS:
-            new[f] = ''
-        self.profiles.append(new)
-        self.refresh_listbox()
-        self.listbox.select_set(len(self.profiles)-1)
-        self.on_select(None)
-
-    def delete_profile(self):
-        if self.selected_index is None:
-            messagebox.showinfo('Chú ý', 'Vui lòng chọn hồ sơ để xóa.')
-            return
-        confirm = messagebox.askyesno('Xóa hồ sơ', 'Bạn có muốn xóa hồ sơ đã chọn?')
-        if confirm:
-            del self.profiles[self.selected_index]
-            self.selected_index = None
-            save_profiles(self.profiles)
-            self.refresh_listbox()
-            self.on_save_callback(self.profiles)
-
-    def save_changes(self):
-        if self.selected_index is None:
-            messagebox.showinfo('Chú ý', 'Vui lòng chọn hồ sơ để lưu.')
-            return
-        p = self.profiles[self.selected_index]
-        p['name'] = self.fields_vars['name'].get()
-        for f in FIELDS:
-            p[f] = self.fields_vars[f].get()
-        save_profiles(self.profiles)
-        self.refresh_listbox()
-        self.on_save_callback(self.profiles)
-        messagebox.showinfo('Lưu', 'Đã lưu thay đổi vào profiles.json')
-
-    def export_profiles(self):
-        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], title='Lưu hồ sơ ra file')
-        if not path:
-            return
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.profiles, f, ensure_ascii=False, indent=2)
-            messagebox.showinfo('Xuất', f'Đã lưu {len(self.profiles)} hồ sơ ra {path}')
-        except Exception as e:
-            messagebox.showerror('Lỗi', f'Không thể lưu file: {e}')
-
-    def import_profiles(self):
-        path = filedialog.askopenfilename(filetypes=[('JSON','*.json')], title='Chọn file hồ sơ để nhập')
-        if not path:
-            return
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                new_list = json.load(f)
-            if not isinstance(new_list, list):
-                raise ValueError('File không hợp lệ: phải là danh sách hồ sơ')
-            added = merge_profiles(self.profiles, new_list)
-            save_profiles(self.profiles)
-            self.refresh_listbox()
-            self.on_save_callback(self.profiles)
-            messagebox.showinfo('Nhập', f'✅ Đã nhập thêm {added} hồ sơ từ file thành công.')
-        except Exception as e:
-            messagebox.showerror('Lỗi', f'Không thể nhập file: {e}')
-
-# -------------------------
-# GUI: Main App (Tiếng Việt)
-# -------------------------
-
-class AutofillApp(tk.Tk):
+# ------------------- GUI -------------------
+class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_TITLE)
-        self.geometry('760x520')
-        self.profiles = load_profiles()
-        self.create_menu()
+        self.title("Autofill Hidemium")
+        self.geometry("800x500")
+        
+        # Load dữ liệu
+        self.profiles = load_json(PROFILES_FILE, [])
+        self.field_map = load_json(SETTINGS_FILE, DEFAULT_FIELD_MAP.copy())
+        self.hidemium_profiles = load_json(HIDEMIUM_FILE, [])
+        
+        # GUI
         self.create_widgets()
+        self.update_profile_table()
+        self.update_hidemium_combo()
 
-    def create_menu(self):
-        menubar = tk.Menu(self)
-        hs_menu = tk.Menu(menubar, tearoff=0)
-        hs_menu.add_command(label='Chỉnh sửa hồ sơ', command=self.open_editor)
-        hs_menu.add_command(label='Xuất hồ sơ', command=self.export_profiles)
-        hs_menu.add_command(label='Nhập hồ sơ (gộp thêm)', command=self.import_profiles)
-        menubar.add_cascade(label='Hồ sơ', menu=hs_menu)
-        self.config(menu=menubar)
-
+    # ------------------- GUI Widgets -------------------
     def create_widgets(self):
-        top_frame = ttk.Frame(self, padding=10)
-        top_frame.pack(fill='x')
-
-        ttk.Label(top_frame, text='Chọn hồ sơ:').pack(side='left')
-        self.selected_profile = tk.StringVar()
-        self.profile_combo = ttk.Combobox(top_frame, textvariable=self.selected_profile, state='readonly', width=50)
-        self.profile_combo.pack(side='left', padx=8)
-        self.profile_combo.bind('<<ComboboxSelected>>', self.on_profile_selected)
-
-        ttk.Button(top_frame, text='Chạy Autofill', command=self.start_autofill, width=20).pack(side='right')
-
-        # Options row
-        opt_frame = ttk.Frame(self, padding=8)
-        opt_frame.pack(fill='x')
-        self.start_mode = tk.StringVar(value='countdown')
-        ttk.Radiobutton(opt_frame, text='Đếm ngược (tự click vào cửa sổ đích)', variable=self.start_mode, value='countdown').grid(row=0, column=0, sticky='w')
-        ttk.Radiobutton(opt_frame, text='Kích hoạt cửa sổ theo tiêu đề (yêu cầu pygetwindow)', variable=self.start_mode, value='title').grid(row=0, column=1, sticky='w')
-
-        ttk.Label(opt_frame, text='Đếm ngược (s):').grid(row=1, column=0, sticky='e')
-        self.countdown_var = tk.IntVar(value=5)
-        ttk.Entry(opt_frame, textvariable=self.countdown_var, width=6).grid(row=1, column=1, sticky='w')
-
-        ttk.Label(opt_frame, text='Tiêu đề cửa sổ:').grid(row=2, column=0, sticky='e')
-        self.title_var = tk.StringVar()
-        ttk.Entry(opt_frame, textvariable=self.title_var, width=40).grid(row=2, column=1, sticky='w')
-
-        ttk.Label(opt_frame, text='Khoảng cách gõ (s/ký tự):').grid(row=3, column=0, sticky='e')
-        self.interval_var = tk.DoubleVar(value=0.02)
-        ttk.Entry(opt_frame, textvariable=self.interval_var, width=6).grid(row=3, column=1, sticky='w')
-
-        self.press_tab_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opt_frame, text='Nhấn TAB sau mỗi trường', variable=self.press_tab_var).grid(row=4, column=0, sticky='w')
-
-        # Grid display of fields (2 columns)
-        grid_frame = ttk.Frame(self, padding=10)
-        grid_frame.pack(fill='both', expand=True)
-
-        self.field_vars = {}
-        for i, f in enumerate(FIELDS):
-            ttk.Label(grid_frame, text=f+':', width=20, anchor='e').grid(row=i, column=0, padx=6, pady=4)
-            var = tk.StringVar()
-            ent = ttk.Entry(grid_frame, textvariable=var, width=60, state='readonly')
-            ent.grid(row=i, column=1, padx=6, pady=4, sticky='w')
-            self.field_vars[f] = var
-
-        # Status bar
-        self.status_var = tk.StringVar(value='Sẵn sàng')
-        ttk.Label(self, textvariable=self.status_var).pack(fill='x', padx=8, pady=6)
-
-        self.refresh_profile_list()
-
-    def refresh_profile_list(self):
-        names = [p.get('name','(không tên)') for p in self.profiles]
-        self.profile_combo['values'] = names
-        if names:
-            self.profile_combo.current(0)
-            self.load_profile_to_grid(0)
-
-    def on_profile_selected(self, event):
-        idx = self.profile_combo.current()
-        if idx >= 0:
-            self.load_profile_to_grid(idx)
-
-    def load_profile_to_grid(self, idx):
-        p = self.profiles[idx]
-        for f in FIELDS:
-            self.field_vars[f].set(p.get(f,''))
-        self.status_var.set(f'Đang hiển thị: {p.get("name","(không tên)")}")')
-
-    def open_editor(self):
-        editor = ProfileEditor(self, self.profiles, self.on_profiles_saved)
-        editor.grab_set()
-
-    def on_profiles_saved(self, profiles):
-        self.profiles = profiles
-        save_profiles(self.profiles)
-        self.refresh_profile_list()
-
-    def export_profiles(self):
-        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], title='Xuất hồ sơ ra file')
-        if not path:
-            return
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.profiles, f, ensure_ascii=False, indent=2)
-            messagebox.showinfo('Xuất hồ sơ', f'Đã xuất {len(self.profiles)} hồ sơ ra {path}')
-        except Exception as e:
-            messagebox.showerror('Lỗi', f'Không thể lưu file: {e}')
-
+        # Combobox chọn profile Hidemium
+        frame_top = ttk.Frame(self)
+        frame_top.pack(fill="x", padx=10, pady=5)
+        ttk.Label(frame_top, text="Chọn profile Hidemium:").pack(side="left")
+        self.hidemium_cb = ttk.Combobox(frame_top,state="readonly")
+        self.hidemium_cb.pack(side="left", padx=5)
+        
+        # Combobox chọn hồ sơ
+        ttk.Label(frame_top, text="Chọn hồ sơ:").pack(side="left", padx=10)
+        self.profile_cb = ttk.Combobox(frame_top,state="readonly")
+        self.profile_cb.pack(side="left", padx=5)
+        self.profile_cb.bind("<<ComboboxSelected>>", lambda e:self.show_selected_profile())
+        
+        # Bảng hiển thị hồ sơ
+        self.tree = ttk.Treeview(self, columns=("field","value"), show="headings")
+        self.tree.heading("field", text="Trường")
+        self.tree.heading("value", text="Giá trị")
+        self.tree.column("field", width=200)
+        self.tree.column("value", width=500)
+        self.tree.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Nút Autofill
+        ttk.Button(self, text="Chạy Autofill", command=self.autofill).pack(pady=5)
+        
+        # Menu
+        menubar = tk.Menu(self)
+        # Hồ sơ
+        profile_menu = tk.Menu(menubar, tearoff=0)
+        profile_menu.add_command(label="Thêm/Sửa/Xóa Hồ sơ", command=self.edit_profiles)
+        profile_menu.add_command(label="Import Hồ sơ", command=self.import_profiles)
+        profile_menu.add_command(label="Export Hồ sơ", command=self.export_profiles)
+        menubar.add_cascade(label="Hồ sơ", menu=profile_menu)
+        # Cài đặt
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        settings_menu.add_command(label="Nhận dạng trường", command=self.edit_field_map)
+        menubar.add_cascade(label="Cài đặt", menu=settings_menu)
+        self.config(menu=menubar)
+    
+    # ------------------- Hồ sơ -------------------
+    def update_profile_table(self):
+        self.tree.delete(*self.tree.get_children())
+        profile_names = [p.get("Tên hồ sơ",f"Hồ sơ {i}") for i,p in enumerate(self.profiles)]
+        self.profile_cb['values'] = profile_names
+        if profile_names:
+            self.profile_cb.current(0)
+            self.show_selected_profile()
+    
+    def show_selected_profile(self):
+        self.tree.delete(*self.tree.get_children())
+        idx = self.profile_cb.current()
+        if idx<0: return
+        profile = self.profiles[idx]
+        for key in DEFAULT_FIELDS:
+            self.tree.insert("", "end", values=(key, profile.get(key,"")))
+    
+    def edit_profiles(self):
+        ProfileEditor(self)
+    
     def import_profiles(self):
-        path = filedialog.askopenfilename(filetypes=[('JSON','*.json')], title='Chọn file hồ sơ để nhập (gộp thêm)')
-        if not path:
+        file = filedialog.askopenfilename(filetypes=[("JSON files","*.json")])
+        if file:
+            try:
+                data = load_json(file,[])
+                self.profiles += data
+                save_json(PROFILES_FILE,self.profiles)
+                self.update_profile_table()
+                messagebox.showinfo("Import","Import hồ sơ thành công.")
+            except Exception as e:
+                messagebox.showerror("Lỗi", str(e))
+    
+    def export_profiles(self):
+        file = filedialog.asksaveasfilename(defaultextension=".json",filetypes=[("JSON files","*.json")])
+        if file:
+            save_json(file,self.profiles)
+            messagebox.showinfo("Export","Export hồ sơ thành công.")
+    
+    # ------------------- Field Map -------------------
+    def edit_field_map(self):
+        FieldSettingsEditor(self)
+    
+    # ------------------- Hidemium -------------------
+    def update_hidemium_combo(self):
+        names = [p['tên'] for p in self.hidemium_profiles]
+        self.hidemium_cb['values'] = names
+        if names: self.hidemium_cb.current(0)
+    
+    # ------------------- Autofill -------------------
+    def autofill(self):
+        hidemium_idx = self.hidemium_cb.current()
+        profile_idx = self.profile_cb.current()
+        if hidemium_idx<0 or profile_idx<0:
+            messagebox.showwarning("Chọn profile","Vui lòng chọn profile Hidemium và hồ sơ.")
             return
+        hidemium_profile = self.hidemium_profiles[hidemium_idx]
+        profile = self.profiles[profile_idx]
+        port = hidemium_profile['port']
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                new_list = json.load(f)
-            if not isinstance(new_list, list):
-                raise ValueError('File không hợp lệ: phải là danh sách hồ sơ')
-            added = merge_profiles(self.profiles, new_list)
-            save_profiles(self.profiles)
-            self.refresh_profile_list()
-            messagebox.showinfo('Nhập hồ sơ', f'✅ Đã nhập thêm {added} hồ sơ từ file thành công.')
+            chrome_options = Options()
+            chrome_options.debugger_address = f"127.0.0.1:{port}"
+            driver = webdriver.Chrome(options=chrome_options)
+            # Tab hiện tại
+            driver.switch_to.window(driver.current_window_handle)
+            # Dò input
+            inputs = driver.find_elements("xpath","//input | //textarea")
+            for inp in inputs:
+                try:
+                    attr_text = " ".join([
+                        inp.get_attribute("name") or "",
+                        inp.get_attribute("id") or "",
+                        inp.get_attribute("placeholder") or "",
+                        inp.get_attribute("aria-label") or ""
+                    ]).lower()
+                    for field, keywords in self.field_map.items():
+                        if any(k.lower() in attr_text for k in keywords):
+                            value = profile.get(field_mapping_to_human(field),"")
+                            inp.clear()
+                            inp.send_keys(value)
+                            break
+                except: pass
+            messagebox.showinfo("Hoàn thành","Autofill xong!")
         except Exception as e:
-            messagebox.showerror('Lỗi', f'Không thể nhập file: {e}')
+            messagebox.showerror("Lỗi", str(e))
 
-    def start_autofill(self):
-        idx = self.profile_combo.current()
-        if idx < 0:
-            messagebox.showinfo('Chú ý', 'Vui lòng chọn ít nhất một hồ sơ để chạy.')
-            return
-        # allow selecting multiple? For simplicity, run single selected profile
-        profiles_to_fill = [self.profiles[idx]]
-        mode = self.start_mode.get()
-        countdown = int(self.countdown_var.get())
-        title = self.title_var.get()
-        interval = float(self.interval_var.get())
-        press_tab = self.press_tab_var.get()
+# Chuyển key code sang tên hiển thị
+def field_mapping_to_human(field):
+    mapping = {
+        "username":"Tài khoản",
+        "password":"Mật khẩu",
+        "confirm_password":"Nhập lại mật khẩu",
+        "fullname":"Họ tên",
+        "phone":"Số điện thoại",
+        "email":"Email",
+        "dob":"Ngày sinh",
+        "pin":"PIN",
+        "bank":"Ngân hàng",
+        "branch":"Chi nhánh"
+    }
+    return mapping.get(field,field)
 
-        self.status_var.set('Đang bắt đầu autofill...')
-        worker = threading.Thread(target=self._worker_thread, args=(profiles_to_fill, mode, countdown, title, interval, press_tab), daemon=True)
-        worker.start()
+# ------------------- Profile Editor -------------------
+class ProfileEditor(tk.Toplevel):
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("Quản lý hồ sơ")
+        self.geometry("700x400")
+        self.master = master
+        self.create_widgets()
+        self.update_table()
+    
+    def create_widgets(self):
+        self.tree = ttk.Treeview(self, columns=("Tên hồ sơ",*DEFAULT_FIELDS), show="headings")
+        for col in ["Tên hồ sơ"]+DEFAULT_FIELDS:
+            self.tree.heading(col,text=col)
+            self.tree.column(col,width=100)
+        self.tree.pack(fill="both", expand=True, padx=5, pady=5)
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=5)
+        ttk.Button(btn_frame, text="Thêm", command=self.add_profile).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Sửa", command=self.edit_profile).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Xóa", command=self.delete_profile).pack(side="left", padx=5)
+    
+    def update_table(self):
+        self.tree.delete(*self.tree.get_children())
+        for p in self.master.profiles:
+            vals = [p.get("Tên hồ sơ", "")]+[p.get(f,"") for f in DEFAULT_FIELDS]
+            self.tree.insert("", "end", values=vals)
+    
+    def add_profile(self):
+        ProfileForm(self, None)
+    
+    def edit_profile(self):
+        sel = self.tree.selection()
+        if not sel: return
+        idx = self.tree.index(sel[0])
+        ProfileForm(self, idx)
+    
+    def delete_profile(self):
+        sel = self.tree.selection()
+        if not sel: return
+        idx = self.tree.index(sel[0])
+        self.master.profiles.pop(idx)
+        save_json(PROFILES_FILE, self.master.profiles)
+        self.update_table()
+        self.master.update_profile_table()
 
-    def _worker_thread(self, profiles_to_fill, mode, countdown, title, interval, press_tab):
-        try:
-            run_autofill(profiles_to_fill, mode, countdown, title, interval, press_tab)
-            self.status_var.set('Hoàn tất autofill')
-        except Exception as e:
-            self.status_var.set(f'Lỗi: {e}')
+# ------------------- Profile Form -------------------
+class ProfileForm(tk.Toplevel):
+    def __init__(self, master, idx):
+        super().__init__(master)
+        self.title("Thêm/Sửa hồ sơ")
+        self.geometry("500x500")
+        self.master = master
+        self.idx = idx
+        self.entries = {}
+        self.create_widgets()
+        if idx is not None:
+            self.load_profile()
+    
+    def create_widgets(self):
+        frm = ttk.Frame(self)
+        frm.pack(padx=10, pady=10, fill="both", expand=True)
+        ttk.Label(frm,text="Tên hồ sơ:").grid(row=0,column=0,sticky="e")
+        self.name_var = tk.StringVar()
+        ttk.Entry(frm,textvariable=self.name_var).grid(row=0,column=1,sticky="w")
+        for i, field in enumerate(DEFAULT_FIELDS):
+            ttk.Label(frm,text=field+":").grid(row=i+1,column=0,sticky="e")
+            var = tk.StringVar()
+            ttk.Entry(frm,textvariable=var).grid(row=i+1,column=1,sticky="w")
+            self.entries[field] = var
+        ttk.Button(frm,text="Lưu", command=self.save).grid(row=len(DEFAULT_FIELDS)+1,column=0,columnspan=2,pady=10)
+    
+    def load_profile(self):
+        profile = self.master.master.profiles[self.idx]
+        self.name_var.set(profile.get("Tên hồ sơ",""))
+        for field in DEFAULT_FIELDS:
+            self.entries[field].set(profile.get(field,""))
+    
+    def save(self):
+        data = {"Tên hồ sơ": self.name_var.get()}
+        for field in DEFAULT_FIELDS:
+            data[field] = self.entries[field].get()
+        if self.idx is None:
+            self.master.master.profiles.append(data)
+        else:
+            self.master.master.profiles[self.idx] = data
+        save_json(PROFILES_FILE, self.master.master.profiles)
+        self.master.update_table()
+        self.master.master.update_profile_table()
+        self.destroy()
 
-# -------------------------
-# Main
-# -------------------------
+# ------------------- Field Settings Editor -------------------
+class FieldSettingsEditor(tk.Toplevel):
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("Cài đặt nhận dạng trường")
+        self.geometry("600x400")
+        self.master = master
+        self.field_map = load_json(SETTINGS_FILE, DEFAULT_FIELD_MAP.copy())
+        self.create_widgets()
+    
+    def create_widgets(self):
+        self.tree = ttk.Treeview(self, columns=("field","keywords"), show="headings")
+        self.tree.heading("field", text="Trường")
+        self.tree.heading("keywords", text="Từ khóa (phân tách bằng ,)")
+        self.tree.column("field", width=150)
+        self.tree.column("keywords", width=400)
+        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
+        for field, keywords in self.field_map.items():
+            self.tree.insert("", "end", values=(field,", ".join(keywords)))
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Lưu thay đổi", command=self.save_changes).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Khôi phục mặc định", command=self.reset_default).pack(side="left", padx=5)
+    
+    def save_changes(self):
+        for item in self.tree.get_children():
+            field, keywords = self.tree.item(item,"values")
+            self.field_map[field] = [k.strip() for k in keywords.split(",") if k.strip()]
+        save_json(SETTINGS_FILE, self.field_map)
+        self.master.field_map = self.field_map
+        messagebox.showinfo("Lưu","Đã lưu các từ khóa nhận dạng mới.")
+    
+    def reset_default(self):
+        self.field_map = DEFAULT_FIELD_MAP.copy()
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for field, keywords in self.field_map.items():
+            self.tree.insert("", "end", values=(field,", ".join(keywords)))
+        save_json(SETTINGS_FILE, self.field_map)
+        self.master.field_map = self.field_map
+        messagebox.showinfo("Khôi phục","Đã khôi phục các từ khóa mặc định.")
 
-if __name__ == '__main__':
-    app = AutofillApp()
+# ------------------- Chạy ứng dụng -------------------
+if __name__ == "__main__":
+    app = App()
     app.mainloop()
-
-# ---------
-# GHI CHÚ
-# ---------
-# - Đảm bảo file profiles.json nằm cùng thư mục (app sẽ tự tạo nếu không có). 
-# - Để dừng khẩn cấp khi pyautogui đang gõ: di chuyển chuột lên góc trên-trái màn hình để kích hoạt PyAutoGUI fail-safe.
-# - Nếu muốn autofill nhiều hồ sơ liên tục, có thể mở rộng giao diện để chọn nhiều. Hiện tại nút Chạy chỉ chạy hồ sơ đang chọn trong combobox.
-# - File JSON mẫu nên có cấu trúc: danh sách các object với key 'name' và các key trùng với FIELDS.
-
-# Ví dụ profiles.json:
-# [
-#   {
-#     "name": "User1",
-#     "Tài khoản": "username1",
-#     "Mật khẩu": "password123",
-#     "Nhập lại mật khẩu": "password123",
-#     "Họ tên": "Nguyen Van A",
-#     "Số điện thoại": "0123456789",
-#     "Email": "a@example.com",
-#     "Ngày sinh": "01/01/2000",
-#     "PIN": "1234",
-#     "Bank": "VCB",
-#     "Chi nhánh": "Hanoi"
-#   }
-# ]
