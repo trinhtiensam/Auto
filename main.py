@@ -227,8 +227,8 @@ class FieldMapEditor(tk.Toplevel):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Autofill App")
-        self.geometry("1000x620")
+        self.title("Autofill By Sum")
+        self.geometry("775x615")
 
         # Data
         self.profiles = ensure_file_json(PROFILES_FILE, [])
@@ -260,7 +260,7 @@ class App(tk.Tk):
         frm_left.grid(row=0, column=0, rowspan=2, sticky="nsw")
         ttk.Label(frm_left, text="Browser đang chạy:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
 
-        self.browser_tree = ttk.Treeview(frm_left, show="tree", height=12)
+        self.browser_tree = ttk.Treeview(frm_left, show="tree", height=20)
         self.browser_tree.pack(fill="both", expand=False, pady=(4, 6), padx=(0, 4))
 
         ttk.Button(frm_left, text="🔍 Quét Browser", command=self.scan_browsers).pack(fill="x", pady=(0, 6))
