@@ -2,32 +2,38 @@ name: Build EXE
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-2022
+
     steps:
-      # Lấy source code
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      # Cài Python
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: '3.11'
 
-      # Cài dependencies
+      - name: Check requirements.txt exists
+        run: |
+          if not exist requirements.txt (
+            echo "❌ ERROR: requirements.txt không tồn tại trong repo gốc!"
+            exit 1
+          )
+
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+        run: pip install -r requirements.txt
 
-      # Build exe bằng PyInstaller
-      - name: Build exe with PyInstaller
-        run: pyinstaller --onefile --noconsole your_app.py
+      - name: Build EXE with PyInstaller
+        run: pyinstaller --onefile main.py
 
-      # Upload artifact (EXE)
-      - name: Upload exe
+      - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-exe
-          path: dist/your_app.exe
+          path: dist/*.exe
