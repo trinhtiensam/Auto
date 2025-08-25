@@ -415,92 +415,74 @@ class App(tk.Tk):
             return self.browser_list[idx]
         return None
 
-   # ---------- Autofill ----------
-def autofill(self):
-    b = self.selected_browser()
-    if not b:
-        messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.")
-        return
+       # ---------- Autofill ----------
+    def autofill(self):
+        # Lấy browser đang chọn
+        b = self.selected_browser()
+        if not b:
+            messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.")
+            return
 
-    pidx = self.current_profile_index()
-    if pidx is None:
-        messagebox.showerror("Lỗi", "Hãy chọn một hồ sơ để autofill.")
-        return
-    profile = self.profiles[pidx]
+        # Lấy hồ sơ đang chọn
+        pidx = self.current_profile_index()
+        if pidx is None:
+            messagebox.showerror("Lỗi", "Hãy chọn một hồ sơ để autofill.")
+            return
+        profile = self.profiles[pidx]
 
-    try:
-        options = Options()
-        options.debugger_address = f"127.0.0.1:{b['port']}"
-        driver = webdriver.Chrome(options=options)
-    except Exception as e:
-        messagebox.showerror("Không thể kết nối", f"Không attach được Selenium: {e}")
-        return
+        # Attach vào browser qua remote debugging
+        try:
+            options = Options()
+            options.debugger_address = f"127.0.0.1:{b['port']}"
+            driver = webdriver.Chrome(options=options)
+        except Exception as e:
+            messagebox.showerror("Không thể kết nối", f"Không attach được Selenium: {e}")
+            return
 
-    filled, not_found = [], []
+        filled, not_found = [], []
 
-    # Duyệt qua field_map (settings.json) -> autofill theo keywords
-    for field, keywords in self.field_map.items():
-        val = (profile.get(field) or "").strip()
-        if not val:
-            continue
-
-        success = False
-        # tìm input/textarea trên trang
+        # Duyệt qua tất cả input/textarea
         xpath_base = ("//input | //textarea")
         inputs = driver.find_elements("xpath", xpath_base)
-        for el in inputs:
-            try:
-                attr = " ".join([
-                    (el.get_attribute("name") or ""),
-                    (el.get_attribute("id") or ""),
-                    (el.get_attribute("placeholder") or ""),
-                    (el.get_attribute("aria-label") or ""),
-                    (el.get_attribute("ng-model") or "")
-                ]).lower()
 
-                if any(k.lower() in attr for k in keywords):
-                    try:
-                        el.clear()
-                    except Exception:
-                        pass
-                    el.send_keys(val)
-                    filled.append(field)
-                    success = True
-                    break
-            except Exception:
+        for field, keywords in self.field_map.items():
+            val = (profile.get(field) or "").strip()
+            if not val:
                 continue
 
-        if not success:
-            # Fallback: XPATH contains cho từng keyword
-            for k in keywords:
+            success = False
+            for el in inputs:
                 try:
-                    el = driver.find_element(
-                        "xpath",
-                        f"//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}') "
-                        f"or contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}') "
-                        f"or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}') "
-                        f"or contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}') "
-                        f"or contains(translate(@ng-model,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}')]"
-                    )
-                    try:
-                        el.clear()
-                    except Exception:
-                        pass
-                    el.send_keys(val)
-                    filled.append(field)
-                    success = True
-                    break
+                    # Ghép các thuộc tính để so khớp
+                    attr = " ".join([
+                        (el.get_attribute("name") or ""),
+                        (el.get_attribute("id") or ""),
+                        (el.get_attribute("placeholder") or ""),
+                        (el.get_attribute("aria-label") or ""),
+                        (el.get_attribute("ng-model") or "")
+                    ]).lower()
+
+                    # Nếu bất kỳ keyword nào khớp thì điền giá trị
+                    if any(k.lower() in attr for k in keywords):
+                        try:
+                            el.clear()
+                        except Exception:
+                            pass
+                        el.send_keys(val)
+                        filled.append(field)
+                        success = True
+                        break
                 except Exception:
                     continue
 
-        if not success:
-            not_found.append(field)
+            if not success:
+                # Nếu không tìm thấy input phù hợp thì ghi vào not_found
+                not_found.append(field)
 
-    # ✅ chỉ in log ra console, không hiện popup thông báo
-    print(f"✅ Đã điền: {', '.join(filled) if filled else '(Không có)'}")
-    if not_found:
-        print(f"⚠️ Không tìm thấy: {', '.join(not_found)}")
-
+        # In log ra terminal, không popup messagebox
+        print(f"✅ Autofill xong. Đã điền: {filled if filled else 'Không có'}")
+        if not_found:
+            print(f"⚠️ Không tìm thấy: {not_found}")
 
 # =============== Run ===============
 if __name__ == "__main__":
