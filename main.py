@@ -13,12 +13,11 @@ PROFILES_FILE = "profiles.json"
 SETTINGS_FILE = "settings.json"
 
 FIELDS = [
-    "Tên hồ sơ", "Tài khoản", "Mật khẩu", "Nhập lại mật khẩu", "Họ tên",
+    "Tài khoản", "Mật khẩu", "Nhập lại mật khẩu", "Họ tên",
     "SĐT", "Email", "Năm sinh", "PIN", "Ngân hàng", "Chi nhánh"
 ]
 
 DEFAULT_FIELD_KEYWORDS = {
-    "Tên hồ sơ": ["profile_name", "ten_ho_so"],
     "Tài khoản": ["username", "user", "account", "login", "tai_khoan"],
     "Mật khẩu": ["password", "pass", "pwd", "mat_khau"],
     "Nhập lại mật khẩu": ["confirm", "confirm_password", "retype", "nhap_lai"],
@@ -308,9 +307,9 @@ class App(tk.Tk):
     def refresh_profile_table(self):
         self.tbl.delete(*self.tbl.get_children())
         for p in self.profiles:
-            self.tbl.insert("", "end", values=(p.get("Tên hồ sơ", ""),
+            self.tbl.insert("", "end", values=(p.get("Họ tên", ""),
                                                p.get("Tài khoản", ""),
-                                               p.get("Email", "")))
+                                               p.get("SĐT", "")))
         self.show_profile_detail()
 
     def current_profile_index(self):
