@@ -122,6 +122,7 @@ def find_running_browsers():
                 "port": port,
                 "title": title,
                 "icon": icon
+				if not title.strip(): continue
             })
         except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
             continue
