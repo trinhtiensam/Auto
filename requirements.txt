@@ -1,8 +1,7 @@
-PyQt5==5.15.10
-PyQt5-Qt5==5.15.2
-PyQt5-sip==12.13.0
+selenium>=4.0.0
+webdriver-manager>=4.0.0
+pyinstaller>=6.0.0
 
-selenium==4.23.1
-requests==2.32.3
-
-pyinstaller==6.10.0
+# Nếu GUI bằng Tkinter thì không cần thêm (Tkinter có sẵn trong Python)
+# Nếu GUI bằng PyQt5 thì bật dòng dưới:
+# pyqt5>=5.15.0
