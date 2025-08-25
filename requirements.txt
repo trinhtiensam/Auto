@@ -3,7 +3,8 @@ requests>=2.31.0
 webdriver-manager>=4.0.0
 pyinstaller>=6.0.0
 psutil
-
+pillow
+pywin32
 # Nếu GUI bằng Tkinter thì không cần thêm (Tkinter có sẵn trong Python)
 # Nếu GUI bằng PyQt5 thì bật dòng dưới:
 # pyqt5>=5.15.0
