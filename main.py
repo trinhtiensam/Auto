@@ -453,7 +453,8 @@ class App(tk.Tk):
                         (el.get_attribute("name") or ""),
                         (el.get_attribute("id") or ""),
                         (el.get_attribute("placeholder") or ""),
-                        (el.get_attribute("aria-label") or "")
+                        (el.get_attribute("aria-label") or ""),
+			(el.get_attribute("ng-model") or "")
                     ]).lower()
 
                     if any(k.lower() in attr for k in keywords):
