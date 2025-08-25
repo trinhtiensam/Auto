@@ -3,11 +3,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+import requests
+import threading
+import sys
 
 # ------------------- File JSON -------------------
 PROFILES_FILE = "profiles.json"
 SETTINGS_FILE = "settings.json"
-HIDEMIUM_FILE = "hidemium_profiles.json"
 
 # ------------------- Mặc định -------------------
 DEFAULT_FIELDS = ["Tài khoản","Mật khẩu","Nhập lại mật khẩu","Họ tên","Số điện thoại",
@@ -40,6 +42,37 @@ def save_json(file,data):
     with open(file,"w",encoding="utf-8") as f:
         json.dump(data,f,ensure_ascii=False,indent=2)
 
+# ------------------- Tự động dò Hidemium Profiles -------------------
+def autodetect_hidemium_profiles(port_range=range(9222,9232)):
+    profiles = []
+    for port in port_range:
+        try:
+            url = f"http://127.0.0.1:{port}/json/version"
+            resp = requests.get(url, timeout=0.3)
+            if resp.status_code == 200:
+                data = resp.json()
+                name = data.get("Browser","Hidemium Profile")
+                profiles.append({"tên": name, "port": port})
+        except:
+            continue
+    return profiles
+
+# ------------------- Chuyển key code sang tên hiển thị -------------------
+def field_mapping_to_human(field):
+    mapping = {
+        "username":"Tài khoản",
+        "password":"Mật khẩu",
+        "confirm_password":"Nhập lại mật khẩu",
+        "fullname":"Họ tên",
+        "phone":"Số điện thoại",
+        "email":"Email",
+        "dob":"Ngày sinh",
+        "pin":"PIN",
+        "bank":"Ngân hàng",
+        "branch":"Chi nhánh"
+    }
+    return mapping.get(field,field)
+
 # ------------------- GUI -------------------
 class App(tk.Tk):
     def __init__(self):
@@ -50,12 +83,14 @@ class App(tk.Tk):
         # Load dữ liệu
         self.profiles = load_json(PROFILES_FILE, [])
         self.field_map = load_json(SETTINGS_FILE, DEFAULT_FIELD_MAP.copy())
-        self.hidemium_profiles = load_json(HIDEMIUM_FILE, [])
+        self.hidemium_profiles = []
         
         # GUI
         self.create_widgets()
         self.update_profile_table()
-        self.update_hidemium_combo()
+        
+        # Tự động dò Hidemium profile
+        threading.Thread(target=self.detect_profiles_thread, daemon=True).start()
 
     # ------------------- GUI Widgets -------------------
     def create_widgets(self):
@@ -85,13 +120,12 @@ class App(tk.Tk):
         
         # Menu
         menubar = tk.Menu(self)
-        # Hồ sơ
         profile_menu = tk.Menu(menubar, tearoff=0)
         profile_menu.add_command(label="Thêm/Sửa/Xóa Hồ sơ", command=self.edit_profiles)
         profile_menu.add_command(label="Import Hồ sơ", command=self.import_profiles)
         profile_menu.add_command(label="Export Hồ sơ", command=self.export_profiles)
         menubar.add_cascade(label="Hồ sơ", menu=profile_menu)
-        # Cài đặt
+        
         settings_menu = tk.Menu(menubar, tearoff=0)
         settings_menu.add_command(label="Nhận dạng trường", command=self.edit_field_map)
         menubar.add_cascade(label="Cài đặt", menu=settings_menu)
@@ -139,8 +173,9 @@ class App(tk.Tk):
     def edit_field_map(self):
         FieldSettingsEditor(self)
     
-    # ------------------- Hidemium -------------------
-    def update_hidemium_combo(self):
+    # ------------------- Tự động dò Hidemium -------------------
+    def detect_profiles_thread(self):
+        self.hidemium_profiles = autodetect_hidemium_profiles()
         names = [p['tên'] for p in self.hidemium_profiles]
         self.hidemium_cb['values'] = names
         if names: self.hidemium_cb.current(0)
@@ -159,9 +194,7 @@ class App(tk.Tk):
             chrome_options = Options()
             chrome_options.debugger_address = f"127.0.0.1:{port}"
             driver = webdriver.Chrome(options=chrome_options)
-            # Tab hiện tại
             driver.switch_to.window(driver.current_window_handle)
-            # Dò input
             inputs = driver.find_elements("xpath","//input | //textarea")
             for inp in inputs:
                 try:
@@ -182,156 +215,10 @@ class App(tk.Tk):
         except Exception as e:
             messagebox.showerror("Lỗi", str(e))
 
-# Chuyển key code sang tên hiển thị
-def field_mapping_to_human(field):
-    mapping = {
-        "username":"Tài khoản",
-        "password":"Mật khẩu",
-        "confirm_password":"Nhập lại mật khẩu",
-        "fullname":"Họ tên",
-        "phone":"Số điện thoại",
-        "email":"Email",
-        "dob":"Ngày sinh",
-        "pin":"PIN",
-        "bank":"Ngân hàng",
-        "branch":"Chi nhánh"
-    }
-    return mapping.get(field,field)
-
-# ------------------- Profile Editor -------------------
+# ------------------- Profile Editor & Form -------------------
 class ProfileEditor(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Quản lý hồ sơ")
         self.geometry("700x400")
         self.master = master
-        self.create_widgets()
-        self.update_table()
-    
-    def create_widgets(self):
-        self.tree = ttk.Treeview(self, columns=("Tên hồ sơ",*DEFAULT_FIELDS), show="headings")
-        for col in ["Tên hồ sơ"]+DEFAULT_FIELDS:
-            self.tree.heading(col,text=col)
-            self.tree.column(col,width=100)
-        self.tree.pack(fill="both", expand=True, padx=5, pady=5)
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=5)
-        ttk.Button(btn_frame, text="Thêm", command=self.add_profile).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Sửa", command=self.edit_profile).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Xóa", command=self.delete_profile).pack(side="left", padx=5)
-    
-    def update_table(self):
-        self.tree.delete(*self.tree.get_children())
-        for p in self.master.profiles:
-            vals = [p.get("Tên hồ sơ", "")]+[p.get(f,"") for f in DEFAULT_FIELDS]
-            self.tree.insert("", "end", values=vals)
-    
-    def add_profile(self):
-        ProfileForm(self, None)
-    
-    def edit_profile(self):
-        sel = self.tree.selection()
-        if not sel: return
-        idx = self.tree.index(sel[0])
-        ProfileForm(self, idx)
-    
-    def delete_profile(self):
-        sel = self.tree.selection()
-        if not sel: return
-        idx = self.tree.index(sel[0])
-        self.master.profiles.pop(idx)
-        save_json(PROFILES_FILE, self.master.profiles)
-        self.update_table()
-        self.master.update_profile_table()
-
-# ------------------- Profile Form -------------------
-class ProfileForm(tk.Toplevel):
-    def __init__(self, master, idx):
-        super().__init__(master)
-        self.title("Thêm/Sửa hồ sơ")
-        self.geometry("500x500")
-        self.master = master
-        self.idx = idx
-        self.entries = {}
-        self.create_widgets()
-        if idx is not None:
-            self.load_profile()
-    
-    def create_widgets(self):
-        frm = ttk.Frame(self)
-        frm.pack(padx=10, pady=10, fill="both", expand=True)
-        ttk.Label(frm,text="Tên hồ sơ:").grid(row=0,column=0,sticky="e")
-        self.name_var = tk.StringVar()
-        ttk.Entry(frm,textvariable=self.name_var).grid(row=0,column=1,sticky="w")
-        for i, field in enumerate(DEFAULT_FIELDS):
-            ttk.Label(frm,text=field+":").grid(row=i+1,column=0,sticky="e")
-            var = tk.StringVar()
-            ttk.Entry(frm,textvariable=var).grid(row=i+1,column=1,sticky="w")
-            self.entries[field] = var
-        ttk.Button(frm,text="Lưu", command=self.save).grid(row=len(DEFAULT_FIELDS)+1,column=0,columnspan=2,pady=10)
-    
-    def load_profile(self):
-        profile = self.master.master.profiles[self.idx]
-        self.name_var.set(profile.get("Tên hồ sơ",""))
-        for field in DEFAULT_FIELDS:
-            self.entries[field].set(profile.get(field,""))
-    
-    def save(self):
-        data = {"Tên hồ sơ": self.name_var.get()}
-        for field in DEFAULT_FIELDS:
-            data[field] = self.entries[field].get()
-        if self.idx is None:
-            self.master.master.profiles.append(data)
-        else:
-            self.master.master.profiles[self.idx] = data
-        save_json(PROFILES_FILE, self.master.master.profiles)
-        self.master.update_table()
-        self.master.master.update_profile_table()
-        self.destroy()
-
-# ------------------- Field Settings Editor -------------------
-class FieldSettingsEditor(tk.Toplevel):
-    def __init__(self, master):
-        super().__init__(master)
-        self.title("Cài đặt nhận dạng trường")
-        self.geometry("600x400")
-        self.master = master
-        self.field_map = load_json(SETTINGS_FILE, DEFAULT_FIELD_MAP.copy())
-        self.create_widgets()
-    
-    def create_widgets(self):
-        self.tree = ttk.Treeview(self, columns=("field","keywords"), show="headings")
-        self.tree.heading("field", text="Trường")
-        self.tree.heading("keywords", text="Từ khóa (phân tách bằng ,)")
-        self.tree.column("field", width=150)
-        self.tree.column("keywords", width=400)
-        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
-        for field, keywords in self.field_map.items():
-            self.tree.insert("", "end", values=(field,", ".join(keywords)))
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Lưu thay đổi", command=self.save_changes).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Khôi phục mặc định", command=self.reset_default).pack(side="left", padx=5)
-    
-    def save_changes(self):
-        for item in self.tree.get_children():
-            field, keywords = self.tree.item(item,"values")
-            self.field_map[field] = [k.strip() for k in keywords.split(",") if k.strip()]
-        save_json(SETTINGS_FILE, self.field_map)
-        self.master.field_map = self.field_map
-        messagebox.showinfo("Lưu","Đã lưu các từ khóa nhận dạng mới.")
-    
-    def reset_default(self):
-        self.field_map = DEFAULT_FIELD_MAP.copy()
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        for field, keywords in self.field_map.items():
-            self.tree.insert("", "end", values=(field,", ".join(keywords)))
-        save_json(SETTINGS_FILE, self.field_map)
-        self.master.field_map = self.field_map
-        messagebox.showinfo("Khôi phục","Đã khôi phục các từ khóa mặc định.")
-
-# ------------------- Chạy ứng dụng -------------------
-if __name__ == "__main__":
-    app = App()
-    app.mainloop()
