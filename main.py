@@ -161,9 +161,6 @@ class ProfileForm(tk.Toplevel):
 
     def on_ok(self):
         data = {f: self.vars[f].get() for f in FIELDS}
-        if not data["Tên hồ sơ"].strip():
-            messagebox.showerror("Lỗi", "Tên hồ sơ không được để trống.")
-            return
         self.result = data
         self.destroy()
 
@@ -271,11 +268,11 @@ class App(tk.Tk):
         ttk.Label(frm_right_top, text="Hồ sơ", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
 
         self.tbl = ttk.Treeview(frm_right_top,
-                                columns=("Tên hồ sơ", "Tài khoản", "Email"),
+                                columns=("Họ tên", "Tài khoản", "SĐT"),
                                 show="headings", height=10)
-        for c in ("Tên hồ sơ", "Tài khoản", "Email"):
+        for c in ("Họ tên", "Tài khoản", "SĐT"):
             self.tbl.heading(c, text=c)
-            self.tbl.column(c, width=180 if c == "Tên hồ sơ" else 160, anchor="center")
+            self.tbl.column(c, width=180 if c == "Họ tên" else 160, anchor="center")
         self.tbl.grid(row=1, column=0, sticky="nsew", pady=(4, 6))
         self.tbl.bind("<<TreeviewSelect>>", lambda e: self.show_profile_detail())
 
