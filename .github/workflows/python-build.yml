@@ -20,11 +20,12 @@ jobs:
           python-version: '3.11'
 
       - name: Check requirements.txt exists
+        shell: pwsh
         run: |
-          if not exist requirements.txt (
-            echo "❌ ERROR: requirements.txt không tồn tại trong repo gốc!"
+          if (-Not (Test-Path "requirements.txt")) {
+            Write-Error "❌ ERROR: requirements.txt không tồn tại trong repo gốc!"
             exit 1
-          )
+          }
 
       - name: Install dependencies
         run: pip install -r requirements.txt
