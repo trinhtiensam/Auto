@@ -1,12 +1,10 @@
 [
   {
-    "Name": "Nguyen Van A",
-    "Email": "test@example.com",
-    "Phone": "0123456789"
+    "name": "Test Account 1",
+    "fields": ["username1", "password123", "Nguyen Van A", "0123456789", "a@example.com"]
   },
   {
-    "Name": "Tran Thi B",
-    "Email": "b@example.com",
-    "Phone": "0987654321"
+    "name": "Test Account 2",
+    "fields": ["anotheruser", "p@ssw0rd", "Tran Thi B", "0987654321", "b@example.com"]
   }
 ]
