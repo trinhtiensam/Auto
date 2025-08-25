@@ -1,33 +1,32 @@
-name: Build AutoFillApp (Python)
+name: Build EXE
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
 
-    - name: Install dependencies
-      run: |
-        pip install pyinstaller pyautogui
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
 
-    - name: Build exe
-      run: |
-        pyinstaller --onefile AutoFillApp.py
-        copy profiles.json dist\
+      # 👉 Bước này sẽ export requirements.txt mới nhất
+      - name: Export requirements.txt
+        run: pip freeze > requirements.txt
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AutoFillApp_EXE
-        path: dist
+      # Commit ngược lại vào repo (cập nhật requirements.txt)
+      - name: Commit updated requirements.txt
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add requirements.txt
+          git commit -m "Update requirements.txt [CI skip]" || echo "No changes"
+          git push
