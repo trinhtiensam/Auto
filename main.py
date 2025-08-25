@@ -112,7 +112,12 @@ def find_running_browsers():
             except Exception:
                 continue
 
+            # Lấy title
             title = get_window_title_from_pid(p.info["pid"]) or ""
+            if not title.strip():   # 👈 bỏ qua browser không có title
+                continue
+
+            # Lấy icon
             icon = get_icon_from_exe(p.info.get("exe") or "")  # may be None
 
             found.append({
@@ -122,7 +127,6 @@ def find_running_browsers():
                 "port": port,
                 "title": title,
                 "icon": icon
-				if not title.strip(): continue
             })
         except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
             continue
