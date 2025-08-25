@@ -66,7 +66,7 @@ def save_settings(data):
     save_json(SETTINGS_FILE, data)
 
 # -------------------- Hidemium scan & connect --------------------
-def scan_hidemium_ports(start=9222, end=9300, timeout=0.25):
+def scan_hidemium_ports(start=0000, end=9999, timeout=0.25):
     found = []
     for port in range(start, end + 1):
         try:
