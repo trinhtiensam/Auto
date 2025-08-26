@@ -18,7 +18,7 @@ FIELDS = [
 ]
 
 DEFAULT_FIELD_KEYWORDS = {
-    "Tài khoản": ["username", "user", "account", "login", "tai_khoan"],
+    "Tài khoản": ["username", "user", "login", "tai_khoan"],
     "Mật khẩu": ["password", "pass", "pwd", "mat_khau"],
     "Nhập lại mật khẩu": ["confirm", "confirm_password", "retype", "nhap_lai"],
     "Họ tên": ["fullname", "full_name", "name", "ho_ten"],
