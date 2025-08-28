@@ -506,6 +506,8 @@ class App(tk.Tk):
 
                         try:
                             # cách 1: send_keys
+                            el.send_keys(Keys.CONTROL + "a")
+                            el.send_keys(Keys.DELETE)
                             el.send_keys(val)
                         except:
                             # cách 2: fallback JS
