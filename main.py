@@ -18,13 +18,13 @@ FIELDS = [
 ]
 
 DEFAULT_FIELD_KEYWORDS = {
-    "Tài khoản": ["username", "user", "login", "tai_khoan"],
-    "Mật khẩu": ["password", "pass", "pwd", "mat_khau"],
-    "Nhập lại mật khẩu": ["confirm", "confirm_password", "retype", "nhap_lai"],
-    "Họ tên": ["fullname", "full_name", "name", "ho_ten"],
-    "SĐT": ["phone", "mobile", "tel", "so_dien_thoai", "sdt"],
+    "Tài khoản": ["2-15", "user", "login", "tai_khoan"],
+    "Mật khẩu": ["6 ký", "pass", "pwd", "mat_khau"],
+    "Nhập lại mật khẩu": ["lại mật khẩu", "confirm_password", "retype", "nhap_lai"],
+    "Họ tên": ["giống tên tài", "full_name", "name", "ho_ten"],
+    "SĐT": ["số điện thoại", "mobile", "tel", "so_dien_thoai", "sdt"],
     "Email": ["email", "mail", "e-mail"],
-    "Năm sinh": ["dob", "birth", "birthday", "ngay_sinh", "nam_sinh"],
+    "Năm sinh": ["ngày sinh", "birth", "birthday", "ngay_sinh", "nam_sinh"],
     "PIN": ["pin", "security_code", "ma_pin"],
     "Ngân hàng": ["bank", "ten_ngan_hang"],
     "Chi nhánh": ["branch", "branch_name", "chi_nhanh"]
@@ -164,6 +164,7 @@ class ProfileForm(tk.Toplevel):
         self.title("Hồ sơ")
         self.resizable(False, False)
         self.result = None
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         frm = ttk.Frame(self, padding=10)
         frm.pack(fill="both", expand=True)
@@ -179,7 +180,7 @@ class ProfileForm(tk.Toplevel):
         btns = ttk.Frame(frm)
         btns.grid(row=len(FIELDS), column=0, columnspan=2, pady=(10, 0))
         ttk.Button(btns, text="Lưu", command=self.on_ok).pack(side="left", padx=5)
-        ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="left", padx=5)
+        ttk.Button(btns, text="Huỷ", command=self.on_close).pack(side="left", padx=5)
 
         self.bind("<Return>", lambda e: self.on_ok())
         self.grab_set()
@@ -192,6 +193,9 @@ class ProfileForm(tk.Toplevel):
         data = {f: self.vars[f].get() for f in FIELDS}
         self.result = data
         self.destroy()
+    def on_close(self):
+        self.result = None
+        self.destroy()    
 
 class FieldMapEditor(tk.Toplevel):
     """Edit settings.json: field -> keywords list"""
@@ -221,7 +225,6 @@ class FieldMapEditor(tk.Toplevel):
 
         btns = ttk.Frame(right); btns.pack(fill="x", pady=6)
         ttk.Button(btns, text="Lưu thay đổi", command=self.save_current).pack(side="left", padx=4)
-        ttk.Button(btns, text="Đóng", command=self.on_close).pack(side="left", padx=4)
 
         self.on_select_field(None)
         self.grab_set(); self.transient(master)
@@ -240,7 +243,7 @@ class FieldMapEditor(tk.Toplevel):
 
     def save_current(self):
         if not self.current_field:
-            messagebox.showwarning("Chưa chọn trường", "Vui lòng chọn một trường ở danh sách bên trái trước khi lưu.")
+            messagebox.showwarning("Chưa chọn trường", "Vui lòng chọn một trường ở danh sách bên trái trước khi lưu.", parent=self)
             return
 
         field = self.current_field
@@ -251,7 +254,7 @@ class FieldMapEditor(tk.Toplevel):
         save_json(SETTINGS_FILE, self.settings)
         self.result = self.settings
 
-        messagebox.showinfo("Đã lưu", f"Đã cập nhật từ khoá cho '{field}'.")
+        messagebox.showinfo("Đã lưu", f"Đã cập nhật từ khoá cho '{field}'.", parent=self)
     
     def on_close(self):
         # KHÔNG gọi save_current nữa
@@ -375,7 +378,7 @@ class App(tk.Tk):
     def edit_profile(self):
         idx = self.current_profile_index()
         if idx is None:
-            messagebox.showinfo("Chọn hồ sơ", "Hãy chọn 1 hồ sơ để sửa.")
+            messagebox.showinfo("Chọn hồ sơ", "Hãy chọn 1 hồ sơ để sửa.", parent=self)
             return
         dlg = ProfileForm(self, initial=self.profiles[idx])
         self.wait_window(dlg)
@@ -388,7 +391,7 @@ class App(tk.Tk):
         idx = self.current_profile_index()
         if idx is None:
             return
-        if messagebox.askyesno("Xác nhận", "Xoá hồ sơ đã chọn?"):
+        if messagebox.askyesno("Xác nhận", "Xoá hồ sơ đã chọn?", parent=self):
             del self.profiles[idx]
             save_json(PROFILES_FILE, self.profiles)
             self.refresh_profile_table()
@@ -402,9 +405,9 @@ class App(tk.Tk):
                 self.profiles.extend(data)
                 save_json(PROFILES_FILE, self.profiles)
                 self.refresh_profile_table()
-                messagebox.showinfo("OK", "Đã import hồ sơ.")
+                messagebox.showinfo("OK", "Đã import hồ sơ.", parent=self)
             else:
-                messagebox.showerror("Lỗi", "File không hợp lệ (phải là mảng JSON).")
+                messagebox.showerror("Lỗi", "File không hợp lệ (phải là mảng JSON).", parent=self)
         except Exception as e:
             messagebox.showerror("Lỗi", str(e))
 
@@ -414,7 +417,7 @@ class App(tk.Tk):
         if not path: return
         try:
             save_json(path, self.profiles)
-            messagebox.showinfo("OK", "Đã export hồ sơ.")
+            messagebox.showinfo("OK", "Đã export hồ sơ.", parent=self)
         except Exception as e:
             messagebox.showerror("Lỗi", str(e))
 
@@ -456,12 +459,12 @@ class App(tk.Tk):
         
         b = self.selected_browser()
         if not b:
-            messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.")
+            messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.", parent=self)
             return
 
         pidx = self.current_profile_index()
         if pidx is None:
-            messagebox.showerror("Lỗi", "Hãy chọn một hồ sơ để autofill.")
+            messagebox.showerror("Lỗi", "Hãy chọn một hồ sơ để autofill.", parent=self)
             return
         profile = self.profiles[pidx]
 
@@ -470,7 +473,7 @@ class App(tk.Tk):
             options.debugger_address = f"127.0.0.1:{b['port']}"
             driver = webdriver.Chrome(options=options)
         except Exception as e:
-            messagebox.showerror("Không thể kết nối", f"Không attach được Selenium: {e}")
+            messagebox.showerror("Không thể kết nối", f"Không attach được Selenium: {e}", parent=self)
             return
 
         filled, not_found = [], []
