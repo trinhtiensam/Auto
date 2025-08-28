@@ -29,6 +29,28 @@ DEFAULT_FIELD_KEYWORDS = {
     "Ngân hàng": ["bank", "ten_ngan_hang"],
     "Chi nhánh": ["branch", "branch_name", "chi_nhanh"]
 }
+# =============== Window helpers ===============
+def center_window(win, master=None):
+    """Canh giữa cửa sổ `win` so với `master` (cha)"""
+    win.update_idletasks()
+    if master is None:
+        master = win.master
+
+    # Lấy toạ độ và kích thước cửa sổ cha
+    x = master.winfo_rootx()
+    y = master.winfo_rooty()
+    w = master.winfo_width()
+    h = master.winfo_height()
+
+    # Lấy kích thước popup
+    ww = win.winfo_width()
+    wh = win.winfo_height()
+
+    # Tính toán vị trí
+    xpos = x + (w - ww) // 2
+    ypos = y + (h - wh) // 2
+
+    win.geometry(f"{ww}x{wh}+{xpos}+{ypos}")
 
 # =============== IO Helpers ===============
 def ensure_file_json(path: str, default_obj):
@@ -163,6 +185,8 @@ class ProfileForm(tk.Toplevel):
         self.grab_set()
         self.transient(master)
         self.focus()
+        center_window(self, master)
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def on_ok(self):
         data = {f: self.vars[f].get() for f in FIELDS}
@@ -177,12 +201,14 @@ class FieldMapEditor(tk.Toplevel):
         self.geometry("580x400")
         self.settings = {k: list(v) for k, v in settings.items()}
         self.result = None
+        self.current_field = None
+        
 
         left = ttk.Frame(self, padding=6); left.pack(side="left", fill="y")
         right = ttk.Frame(self, padding=6); right.pack(side="right", fill="both", expand=True)
 
         ttk.Label(left, text="Trường").pack(anchor="w")
-        self.list_fields = tk.Listbox(left, height=20)
+        self.list_fields = tk.Listbox(left, height=20, exportselection=False)
         self.list_fields.pack(fill="y", expand=False)
         for f in FIELDS:
             self.list_fields.insert("end", f)
@@ -190,7 +216,7 @@ class FieldMapEditor(tk.Toplevel):
         self.list_fields.selection_set(0)
 
         ttk.Label(right, text="Từ khoá (mỗi dòng một từ)").pack(anchor="w")
-        self.txt_keywords = tk.Text(right, height=15)
+        self.txt_keywords = tk.Text(right, height=15, exportselection=False)
         self.txt_keywords.pack(fill="both", expand=True)
 
         btns = ttk.Frame(right); btns.pack(fill="x", pady=6)
@@ -199,28 +225,37 @@ class FieldMapEditor(tk.Toplevel):
 
         self.on_select_field(None)
         self.grab_set(); self.transient(master)
+        center_window(self, master)
 
     def on_select_field(self, _):
         idx = self.list_fields.curselection()
-        if not idx: return
+        if not idx:
+            return
         field = self.list_fields.get(idx[0])
-        kw = "\n".join(self.settings.get(field, []))
+
+        self.current_field = field   # 👈 thêm dòng này để nhớ lại trường đang chọn
+
         self.txt_keywords.delete("1.0", "end")
-        self.txt_keywords.insert("1.0", kw)
+        self.txt_keywords.insert("1.0", "\n".join(self.settings.get(field, [])))
 
     def save_current(self):
-        idx = self.list_fields.curselection()
-        if not idx: return
-        field = self.list_fields.get(idx[0])
-        raw = self.txt_keywords.get("1.0", "end").strip()
+        if not self.current_field:
+            messagebox.showwarning("Chưa chọn trường", "Vui lòng chọn một trường ở danh sách bên trái trước khi lưu.")
+            return
+
+        field = self.current_field
+        raw = self.txt_keywords.get("1.0", "end-1c")
         arr = [x.strip() for x in raw.splitlines() if x.strip()]
         self.settings[field] = arr
-        messagebox.showinfo("Đã lưu", f"Đã cập nhật từ khoá cho '{field}'.")
 
-    def on_close(self):
-        # lưu lần cuối trường đang mở
-        self.save_current()
+        save_json(SETTINGS_FILE, self.settings)
         self.result = self.settings
+
+        messagebox.showinfo("Đã lưu", f"Đã cập nhật từ khoá cho '{field}'.")
+    
+    def on_close(self):
+        # KHÔNG gọi save_current nữa
+        self.result = None
         self.destroy()
 
 # =============== Main App ===============
@@ -389,8 +424,6 @@ class App(tk.Tk):
         self.wait_window(dlg)
         if dlg.result:
             self.field_map = dlg.result
-            save_json(SETTINGS_FILE, self.field_map)
-            messagebox.showinfo("Đã lưu", "Đã cập nhật cài đặt nhận dạng trường.")
 
     # ---------- Browsers ----------
     def scan_browsers(self):
@@ -417,6 +450,10 @@ class App(tk.Tk):
 
                # ---------- Autofill ----------
     def autofill(self):
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        
         b = self.selected_browser()
         if not b:
             messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.")
@@ -438,24 +475,17 @@ class App(tk.Tk):
 
         filled, not_found = [], []
 
-        # Debug: in ra tất cả input/textarea với attr
+        # Lấy tất cả input/textarea
         all_inputs = driver.find_elements("xpath", "//input | //textarea")
         print("=== DEBUG: Các input tìm thấy ===")
         for el in all_inputs:
             try:
-                print({
-                    "name": el.get_attribute("name"),
-                    "id": el.get_attribute("id"),
-                    "placeholder": el.get_attribute("placeholder"),
-                    "aria-label": el.get_attribute("aria-label"),
-                    "ng-model": el.get_attribute("ng-model"),
-                    "type": el.get_attribute("type")
-                })
-            except Exception:
-                continue
+                print("placeholder:", el.get_attribute("placeholder"))
+            except:
+                pass
         print("================================")
 
-        # Autofill theo settings
+        # Autofill theo settings (placeholder only)
         for field, keywords in self.field_map.items():
             val = (profile.get(field) or "").strip()
             if not val:
@@ -464,49 +494,38 @@ class App(tk.Tk):
             success = False
             for el in all_inputs:
                 try:
-                    attr = " ".join([
-                        (el.get_attribute("name") or ""),
-                        (el.get_attribute("id") or ""),
-                        (el.get_attribute("placeholder") or ""),
-                        (el.get_attribute("aria-label") or ""),
-                        (el.get_attribute("ng-model") or "")
-                    ]).lower()
-
-                    if any(k.lower() in attr for k in keywords):
+                    placeholder = (el.get_attribute("placeholder") or "").lower()
+                    if any(k.lower() in placeholder for k in keywords):
                         try:
                             el.clear()
-                        except Exception:
+                        except:
                             pass
-                        el.send_keys(val)
+
+                        try:
+                            # cách 1: send_keys
+                            el.send_keys(val)
+                        except:
+                            # cách 2: fallback JS
+                            driver.execute_script(
+                                "arguments[0].value = arguments[1]; "
+                                "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
+                                el, val
+                            )
                         filled.append(field)
+                        print(f"✅ Điền '{field}' vào placeholder: '{placeholder}'")
                         success = True
                         break
-                except Exception:
+                except Exception as e:
                     continue
 
             if not success:
-                # Fallback: thử match với tất cả attr (@*) chứ không chỉ name/id/placeholder
-                for k in keywords:
-                    try:
-                        el = driver.find_element(
-                            "xpath",
-                            f"//input[contains(translate(string(@*),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}')] "
-                            f"| //textarea[contains(translate(string(@*),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{k.lower()}')]"
-                        )
-                        el.clear()
-                        el.send_keys(val)
-                        filled.append(field)
-                        success = True
-                        break
-                    except Exception:
-                        continue
-
-            if not success:
                 not_found.append(field)
+                print(f"⚠️ Không tìm thấy ô cho '{field}'")
 
-        print(f"✅ Autofill xong. Đã điền: {filled if filled else 'Không có'}")
+        print("=== Kết quả autofill ===")
+        print("Đã điền:", filled if filled else "Không có")
         if not_found:
-            print(f"⚠️ Không tìm thấy: {not_found}")
+            print("Chưa tìm thấy:", not_found)
 
 # =============== Run ===============
 if __name__ == "__main__":
