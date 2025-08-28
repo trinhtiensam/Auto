@@ -14,7 +14,7 @@ SETTINGS_FILE = "settings.json"
 
 FIELDS = [
     "Tài khoản", "Mật khẩu", "Nhập lại mật khẩu", "Họ tên",
-    "SĐT", "Email", "Năm sinh", "PIN", "Ngân hàng", "Chi nhánh"
+    "SĐT", "Email", "Năm sinh", "Chi nhánh", "STK"
 ]
 
 DEFAULT_FIELD_KEYWORDS = {
@@ -456,15 +456,16 @@ class App(tk.Tk):
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
-        
+        from selenium.webdriver.common.keys import Keys
+
         b = self.selected_browser()
         if not b:
-            messagebox.showerror("Lỗi", "Hãy chọn một browser ở khung bên trái.", parent=self)
+            show_error("Lỗi", "Hãy chọn một browser ở khung bên trái.", parent=self)
             return
 
         pidx = self.current_profile_index()
         if pidx is None:
-            messagebox.showerror("Lỗi", "Hãy chọn một hồ sơ để autofill.", parent=self)
+            show_error("Lỗi", "Hãy chọn một hồ sơ để autofill.", parent=self)
             return
         profile = self.profiles[pidx]
 
@@ -473,7 +474,7 @@ class App(tk.Tk):
             options.debugger_address = f"127.0.0.1:{b['port']}"
             driver = webdriver.Chrome(options=options)
         except Exception as e:
-            messagebox.showerror("Không thể kết nối", f"Không attach được Selenium: {e}", parent=self)
+            show_error("Không thể kết nối", f"Không attach được Selenium: {e}", parent=self)
             return
 
         filled, not_found = [], []
@@ -483,12 +484,13 @@ class App(tk.Tk):
         print("=== DEBUG: Các input tìm thấy ===")
         for el in all_inputs:
             try:
-                print("placeholder:", el.get_attribute("placeholder"))
+                print("placeholder:", el.get_attribute("placeholder"),
+                    "| ng-model:", el.get_attribute("ng-model"))
             except:
                 pass
         print("================================")
 
-        # Autofill theo settings (placeholder only)
+        # Autofill theo settings (placeholder + ng-model)
         for field, keywords in self.field_map.items():
             val = (profile.get(field) or "").strip()
             if not val:
@@ -498,29 +500,31 @@ class App(tk.Tk):
             for el in all_inputs:
                 try:
                     placeholder = (el.get_attribute("placeholder") or "").lower()
-                    if any(k.lower() in placeholder for k in keywords):
+                    ng_model   = (el.get_attribute("ng-model") or "").lower()
+
+                    if any(k.lower() in placeholder or k.lower() in ng_model for k in keywords):
                         try:
                             el.clear()
                         except:
                             pass
 
                         try:
-                            # cách 1: send_keys
+                            # Xoá sạch rồi nhập mới
                             el.send_keys(Keys.CONTROL + "a")
                             el.send_keys(Keys.DELETE)
                             el.send_keys(val)
                         except:
-                            # cách 2: fallback JS
+                            # fallback JS
                             driver.execute_script(
                                 "arguments[0].value = arguments[1]; "
                                 "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
                                 el, val
                             )
                         filled.append(field)
-                        print(f"✅ Điền '{field}' vào placeholder: '{placeholder}'")
+                        print(f"✅ Điền '{field}' vào placeholder: '{placeholder}' | ng-model: '{ng_model}'")
                         success = True
                         break
-                except Exception as e:
+                except Exception:
                     continue
 
             if not success:
